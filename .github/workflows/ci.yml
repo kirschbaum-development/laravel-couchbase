@@ -1,0 +1,55 @@
+name: Tests
+on: push
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    container:
+      image: kirschbaumdevelopment/laravel-test-runner:7.4-couch-mongo
+
+    services:
+      couchbase:
+        image: couchbase:6.6.0
+        ports:
+          - 8091-8094:8091-8094
+          - 11210:11210
+
+    strategy:
+      matrix:
+        php: [ 7.4 ]
+
+    name: PHP ${{ matrix.php }}
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Get Composer Cache Directory
+        run: |
+          echo "::set-output name=dir::$(composer config cache-files-dir)"
+
+      - name: Cache Composer packages
+        uses: actions/cache@v2
+        with:
+          path: vendor
+          key: ${{ runner.os }}-php-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-php-
+
+      - name: PHP Install Dependencies (if not cached)
+        if: steps.composer-cache.outputs.cache-hit != 'true'
+        run: composer install -q --no-ansi --no-interaction --no-scripts --no-suggest  --no-progress --prefer-dist
+
+      - name: Prepare environment
+        run: |
+          cp .env.ci .env.testing
+
+      - name: Setup Couchbase
+        run: bash ./ci/couchbase/setup.sh
+        env:
+          COUCHBASE_USERNAME: "Administrator"
+          COUCHBASE_PASSWORD: "password"
+          COUCHBASE_HOST: "couchbase"
+          COUCHBASE_PORT: "8091"
+          COUCHBASE_BUCKET: "canvas"
+
+      - name: Run Testsuite
+        run: vendor/bin/phpunit
